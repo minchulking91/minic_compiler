@@ -1,7 +1,7 @@
 #ifndef NODE_HEADER
 #define NODE_HEADER
 
-enum astNodeNumber{
+enum nodeNumber{
 	ACTUAL_PARAM, 	ADD, 			ADD_ASSIGN, 	ARRAY_VAR, 
 	ASSIGN_OP, 	CALL, 			COMPOUND_ST, 	CONST_NODE,
 	DCL, 			DCL_ITEM, 		DCL_LIST, 		DCL_SPEC, 
@@ -16,18 +16,18 @@ enum astNodeNumber{
 	RETURN_ST, 	SIMPLE_VAR, 	STAT_LIST, 	SUB,
 	SUB_ASSIGN, 	UNARY_MINUS, 	VOID_NODE, 	WHILE_ST };
 
-enum astNodeRep{terminal, nonterm};
+enum nodeRep{terminal, nonterm};
 typedef struct TokenType{
 	int number;
 	char* value;
 } Token;
 
-typedef struct ASTNodeType{
+typedef struct nodeType{
 	Token token;
-	struct ASTNodeType *child;
-	struct ASTNodeType *brother;
-	enum astNodeRep noderep;
-} ASTNode;
+	struct nodeType *child;
+	struct nodeType *brother;
+	enum nodeRep noderep;
+} Node;
 
 
 #endif 

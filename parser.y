@@ -1,12 +1,12 @@
 %{
-	#include "ASTNode.h"
+	#include "Node.h"
 	#include <stdio.h>
 	#include <stdlib.h>
 	#include <mem.h>
 	#include <stdarg.h>
 	#define DEFAULT_OUT_FILE "out.ast"
 	FILE* fp;
-	ASTNode* root;
+	Node* root;
 	char* nodeName[] = {
     	"ACTUAL_PARAM", "ADD",			"ADD_ASSIGN",	"ARRAY_VAR",
     	"ASSIGN_OP", 	"CALL", 		"COMPOUND_ST", 	"CONST_NODE",
@@ -24,22 +24,22 @@
 
     /***functions***/
     /*build AST functions*/
-    ASTNode* makeNode(int number, char* value);
-    ASTNode* makeTree(int nodeNumber, ASTNode* first);
-    ASTNode* linkBrother(ASTNode* node, ...);
-    //ASTNode* rebro(ASTNode* node, int lv); hide this function
-    ASTNode* reverseBrother(ASTNode* node);
+    Node* makeNode(int number, char* value);
+    Node* makeTree(int nodeNumber, Node* first);
+    Node* linkBrother(Node* node, ...);
+    //Node* rebro(Node* node, int lv); hide this function
+    Node* reverseBrother(Node* node);
     /*print AST function*/
-    //void printNode(ASTNode* node, int indent); hide this function
-    void printTree(ASTNode* node, int indent);
+    //void printNode(Node* node, int indent); hide this function
+    void printTree(Node* node, int indent);
     /* export AST to FILE */
-    //void exportNode(ASTNode* node); hide this function
-    void exportTree(ASTNode* root, char* filename);
-    int ismeanfulNode(ASTNode* node);
+    //void exportNode(Node* node); hide this function
+    void exportTree(Node* root, char* filename);
+    int ismeanfulNode(Node* node);
 %}
 %union {
   char* string;
-  ASTNode* node;
+  Node* node;
 }
 %start mini_c
 %token <string> tident tnumber 
@@ -151,16 +151,16 @@ init_declarator
 		$$ = makeTree(DCL_ITEM, $1);
 	}
 	| declarator '=' tnumber { 
-		ASTNode* number = makeNode(NUMBER, $3);
+		Node* number = makeNode(NUMBER, $3);
 		$$ = makeTree(DCL_ITEM, linkBrother(number, $1));
 	};
 declarator
 	: tident { 
-		ASTNode* ident = makeNode(IDENT, $1);
+		Node* ident = makeNode(IDENT, $1);
 		$$ = makeTree(SIMPLE_VAR, ident);
 	}
 	| tident '[' opt_number ']' { 
-		ASTNode* ident = makeNode(NUMBER, $1);
+		Node* ident = makeNode(NUMBER, $1);
 		$$ = makeTree(ARRAY_VAR, linkBrother($3, ident));
 	};
 opt_number
@@ -342,35 +342,35 @@ void main(int argc, char *argv[]){
 }
 
 /*AST build function*/
-ASTNode* makeNode(int number, char* value){
-	ASTNode *node;
+Node* makeNode(int number, char* value){
+	Node *node;
 	Token token;
 	token.number = number;
 	token.value = value;
 
-	node = (ASTNode*) malloc(sizeof(ASTNode));
+	node = (Node*) malloc(sizeof(Node));
 	if(!node){
 	    yyerror("malloc error in makeNode()");
 		exit(1);
 	}
-	memset(node, 0, sizeof(ASTNode));
+	memset(node, 0, sizeof(Node));
 	node->token = token;
 	node->noderep = (number == NUMBER || number == IDENT) ? terminal : nonterm;
 	return node;
 }
-ASTNode* makeTree(int nodeNumber, ASTNode* first){
-	ASTNode *node;
+Node* makeTree(int nodeNumber, Node* first){
+	Node *node;
 	node = makeNode(nodeNumber, NULL);
 	node->child = first;
 	return node;
 }
-ASTNode* linkBrother(ASTNode* node, ...){
-	ASTNode* temp = node;
-	ASTNode* arg = NULL;
+Node* linkBrother(Node* node, ...){
+	Node* temp = node;
+	Node* arg = NULL;
 	va_list ap;
 	va_start(ap, node);
 	for(;;){
-		arg = va_arg(ap, ASTNode*);
+		arg = va_arg(ap, Node*);
 		if(arg == NULL){
 			break;
 		}
@@ -384,14 +384,14 @@ ASTNode* linkBrother(ASTNode* node, ...){
 /**
  * find end-brother and reverse node-list with stack
  */
-ASTNode* rebro(ASTNode* node, int lv){
-	static ASTNode* first;
+Node* rebro(Node* node, int lv){
+	static Node* first;
 	first = NULL;
 	if(node == NULL){
 		return NULL;
 	}
 	if(node->brother != NULL){
-		ASTNode* before = rebro(node->brother, lv+1);
+		Node* before = rebro(node->brother, lv+1);
 		before->brother = node;
 		node->brother = NULL;
 		if(lv == 0){
@@ -406,12 +406,12 @@ ASTNode* rebro(ASTNode* node, int lv){
 
 }
 
-ASTNode* reverseBrother(ASTNode* node){
+Node* reverseBrother(Node* node){
 	return rebro(node, 0);
 }
 
 /*print AST function*/
-void printNode(ASTNode* node, int indent){
+void printNode(Node* node, int indent){
 	int i;
 	for(i=1; i<=indent; i++){
 		printf(" ");
@@ -424,8 +424,8 @@ void printNode(ASTNode* node, int indent){
 	printf("\n");
 }
 
-void printTree(ASTNode* node, int indent){
-	ASTNode* p = node;
+void printTree(Node* node, int indent){
+	Node* p = node;
 	while(p!=NULL){
 		printNode(p, indent);
 		if(p->noderep == nonterm) printTree(p->child, indent+5);
@@ -434,7 +434,7 @@ void printTree(ASTNode* node, int indent){
 }
 
 /* export AST to FILE */
-void exportNode(ASTNode* node){
+void exportNode(Node* node){
     if(node == NULL){
         fprintf(fp, "-1 ");
         return;
@@ -450,7 +450,7 @@ void exportNode(ASTNode* node){
     exportNode(node->brother);
 }
 
-void exportTree(ASTNode* root, char* filename){
+void exportTree(Node* root, char* filename){
     fp = NULL;
     fp = fopen(filename == NULL ? DEFAULT_OUT_FILE : filename, "w");
     if(fp == NULL){
@@ -462,7 +462,7 @@ void exportTree(ASTNode* root, char* filename){
     fclose(fp);
 }
 
-int ismeanfulNode(ASTNode* node){
+int ismeanfulNode(Node* node){
     if(node->token.number == IDENT || node->token.number == NUMBER){
         return 1;
     }

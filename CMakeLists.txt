@@ -10,6 +10,6 @@ BISON_TARGET(MyParser parser.y ${CMAKE_CURRENT_BINARY_DIR}/parser.tab.c)
 FLEX_TARGET(MyScanner scanner.l ${CMAKE_CURRENT_BINARY_DIR}/lex.yy.c)
 ADD_FLEX_BISON_DEPENDENCY(MyScanner MyParser)
 
-add_executable(ast_gen ASTNode.h ${BISON_MyParser_OUTPUTS} ${FLEX_MyScanner_OUTPUTS})
+add_executable(ast_gen Node.h ${BISON_MyParser_OUTPUTS} ${FLEX_MyScanner_OUTPUTS})
 
-add_executable(ucode_gen main.c ASTNode.h SNode.h)
+add_executable(ucode_gen main.c Node.h Symbol.h Ucode.h Symbol.c)
