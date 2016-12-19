@@ -12,4 +12,4 @@ ADD_FLEX_BISON_DEPENDENCY(MyScanner MyParser)
 
 add_executable(ast_gen Node.h ${BISON_MyParser_OUTPUTS} ${FLEX_MyScanner_OUTPUTS})
 
-add_executable(ucode_gen main.c Node.h Symbol.h Ucode.h Symbol.c)
+add_executable(ucode_gen main.c Node.h Symbol.h Ucode.h Symbol.c Ucode.c)

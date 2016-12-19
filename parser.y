@@ -4,7 +4,7 @@
 	#include <stdlib.h>
 	#include <mem.h>
 	#include <stdarg.h>
-	#define DEFAULT_OUT_FILE "out.ast"
+
 	FILE* fp;
 	Node* root;
 	char* nodeName[] = {
@@ -33,8 +33,7 @@
     //void printNode(Node* node, int indent); hide this function
     void printTree(Node* node, int indent);
     /* export AST to FILE */
-    //void exportNode(Node* node); hide this function
-    void exportTree(Node* root, char* filename);
+    void exportNode(Node* node);
     int ismeanfulNode(Node* node);
 %}
 %union {
@@ -138,7 +137,7 @@ declaration_list
 	};
 declaration
 	: dcl_spec init_dcl_list ';' { 
-		$$ = makeTree(DCL, linkBrother($2, $1, NULL));
+		$$ = makeTree(DCL, linkBrother($2, reverseBrother($1), NULL));
 	};
 init_dcl_list
 	: init_declarator {
@@ -152,7 +151,7 @@ init_declarator
 	}
 	| declarator '=' tnumber { 
 		Node* number = makeNode(NUMBER, $3);
-		$$ = makeTree(DCL_ITEM, linkBrother(number, $1));
+		$$ = makeTree(DCL_ITEM, linkBrother(number, $1, NULL));
 	};
 declarator
 	: tident { 
@@ -160,8 +159,8 @@ declarator
 		$$ = makeTree(SIMPLE_VAR, ident);
 	}
 	| tident '[' opt_number ']' { 
-		Node* ident = makeNode(NUMBER, $1);
-		$$ = makeTree(ARRAY_VAR, linkBrother($3, ident));
+		Node* ident = makeNode(IDENT, $1);
+		$$ = makeTree(ARRAY_VAR, linkBrother($3, ident, NULL));
 	};
 opt_number
 	: tnumber { 
@@ -200,7 +199,7 @@ if_st
 	};
 while_st
 	: twhile '(' expression ')' statement { 
-		$$ = makeTree(WHILE_ST, linkBrother($5, $3));
+		$$ = makeTree(WHILE_ST, linkBrother($5, $3, NULL));
 	};
 return_st
 	: treturn opt_expression ';' { 
@@ -331,14 +330,62 @@ primary_exp
 	};
 
 %%
+extern FILE *yyin;
 void yyerror(char *s){
   printf("%s\n", s);
 }
 
-void main(int argc, char *argv[]){
-  yyparse();
-  printTree(root, 0);
-  exportTree(root, NULL);
+int main(int argc, char *argv[]){
+    char fileNameBuf[100];
+    memset(fileNameBuf, 0, sizeof(char)*100);
+	if( argc != 2){
+		printf("Invalid argument!\n - ast_gen.exe inputFile.mc\n");
+		return 1;
+	}
+	strcat(fileNameBuf, argv[1]);
+	fp = fopen(fileNameBuf, "r");
+    if(!fp){
+        printf("Invalid file to open %s\n", fileNameBuf);
+        return 1;
+    }else{
+        printf("start parsing %s ...\n", fileNameBuf);
+    }
+
+    yyin = fp;
+    do{
+        yyparse();
+    }while(!feof(fp));
+    fclose(fp);
+
+    //for print tree
+    int len = strlen(fileNameBuf);
+    for(int i=len-1; i>=0; i--){
+        if(fileNameBuf[i] == '.'){
+          //i is sep
+          memset(&fileNameBuf[i], 0, sizeof(char)*len-i);
+          break;
+        }
+    }
+    sprintf(fileNameBuf, "%s.ast", fileNameBuf);
+    fp = fopen(fileNameBuf, "w");
+    if(fp == NULL){
+        printf("skip print AST : Invalid file to open %s\n", fileNameBuf);
+    }else{
+        printf("print AST to %s ...\n", fileNameBuf);
+        printTree(root, 0);
+    }
+    fclose(fp);
+    //AST DATA
+    sprintf(fileNameBuf, "%s.dat", fileNameBuf);
+    fp = fopen(fileNameBuf, "w");
+    if(fp == NULL){
+        printf("skip print AST Data : Invalid file to open %s\n", fileNameBuf);
+    }else{
+        printf("print AST Data to %s ...\n", fileNameBuf);
+        exportNode(root);
+    }
+    fclose(fp);
+    return 0;
 }
 
 /*AST build function*/
@@ -414,14 +461,14 @@ Node* reverseBrother(Node* node){
 void printNode(Node* node, int indent){
 	int i;
 	for(i=1; i<=indent; i++){
-		printf(" ");
+		fprintf(fp, " ");
 	}
 	if(node->noderep == terminal){
-		printf(" Terminal: %s", node->token.value);
+		fprintf(fp, " Terminal: %s", node->token.value);
 	}else{
-		printf(" Nonterminal: %s", nodeName[node->token.number]);
+		fprintf(fp, " Nonterminal: %s", nodeName[node->token.number]);
 	}
-	printf("\n");
+	fprintf(fp, "\n");
 }
 
 void printTree(Node* node, int indent){
@@ -448,18 +495,6 @@ void exportNode(Node* node){
 
     exportNode(node->child);
     exportNode(node->brother);
-}
-
-void exportTree(Node* root, char* filename){
-    fp = NULL;
-    fp = fopen(filename == NULL ? DEFAULT_OUT_FILE : filename, "w");
-    if(fp == NULL){
-        //error
-        yyerror("invalid file to open");
-        exit(1);
-    }
-    exportNode(root);
-    fclose(fp);
 }
 
 int ismeanfulNode(Node* node){

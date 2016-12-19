@@ -6,58 +6,60 @@
 #include "Symbol.h"
 #include "Ucode.h"
 
-#define DEFAULT_READ_FILE "out.ast"
 #define VALUE_BUF_SIZE 16
 #define AST_STACK_SIZE 128
-#define LABEL_SIZE 10
 
-int lexical_level = 2;
+#define LABEL_SIZE 10
+#define LEXICAL_LEVEL 2
 
 //for import AST
 Node* importTree(char*);
 Node *readNode(FILE *fp);
 
-//for printTree
-void printNode(Node* node, int indent);
-void printTree(Node* node, int indent);
-
+//for processing AST Node
 void genCode(Node *node);
-
 void processDeclaration(Node *node);
-
 void processSimpleVariable(Node *node, enum TYPE_SPEC typeSpecifier, enum TYPE_QUALIFIER typeQualifier);
-
 void processArrayVariable(Node *node, enum TYPE_SPEC typeSpecifier, enum TYPE_QUALIFIER typeQualifier);
-
-void rv_emit(Node *node);
-
 void processFuncHeader(Node *node);
-
-void icg_error(int reason);
-
-void emit1(enum U_CODE code, int param);
-
-void emit0(enum U_CODE code);
-
-void emitJump(enum U_CODE code, char label[5]);
-
-void emit2(enum U_CODE code, int param1, int param2);
-
+void processFunction(Node *node);
+void processPARAM_DCL(Node *node);
+void processStatement(Node *node);
 void processCondition(Node *node);
-
+void processRepVariable(Node *node, enum TYPE_SPEC spec, enum TYPE_QUALIFIER qualifier);
+void processOperator(Node *node);
 void genLabel(char *label);
 
-void emitLabel(char *label);
+void rv_emit(Node *node);
+int checkPredefined(Node *node);
+void emitSymbols();
+void strsep(char*, char, int);
+int main(int argc, char* argv[]) {
+    char fileNameBuf[100];
+    memset(fileNameBuf, 0, sizeof(char)*100);
+    if( argc != 2){
+        printf("Invalid argument!\n - ucode_gen.exe inputFile.ast.out\n");
+        return 1;
+    }
+    strcat(fileNameBuf, argv[1]);
+    Node* root = importTree(fileNameBuf);
+    //open file for write uc
+    if(root == NULL){
+        return 1;
+    }
 
-void emit3(enum U_CODE code, int param1, int param2, int param3);
+    strsep(fileNameBuf, '.', 2);
+    sprintf(fileNameBuf, "%s.uc", fileNameBuf);
+    openUCodeOutFile(fileNameBuf);
 
-void processFunction(Node *node);
+    strsep(fileNameBuf, '.', 1);
+    sprintf(fileNameBuf, "%s.st", fileNameBuf);
+    openSTOutFile(fileNameBuf);
 
-void emitSymbols(int block);
-
-int main() {
-    Node* root = importTree(NULL);
     genCode(root);
+
+    closeUCodeOut();
+    closeSTOut();
     return 0;
 }
 
@@ -65,205 +67,33 @@ void genCode(Node *node) {
     Node *p;
     //initSymbolTable
     initSymbol();
-
     //step 1: process the declaration part
     for(p=node->child; p; p=p->brother){
         if(p->token.number == DCL) processDeclaration(p->child);
         else if(p->token.number == FUNC_DEF) processFuncHeader(p->child);
-        else icg_error(3);
+        else printf("error(genCode) : node is not DCL or FUNC_DEF\n");
     }
+    printSymbolTable("GLOBAL declaration & funcHeader");
     //emit symbols in block(1)
-    emitSymbols(1);
+    emitSymbols();
     //step 2: process the function part
     for(p=node->child; p; p=p->brother){
         if(p->token.number == FUNC_DEF) processFunction(p);
     }
 
     //step 3: gen codes for staring routine
-    emit1(bgn, blockOffset[0]-1);
+    Block* block = getBlock();
+    emit1(bgn, block->offset-1);
     emit0(ldp);
     emitJump(call, "main");
     emit0(endop);
 }
-
-void emitSymbols(int block) {
-
-}
-
-void processFunction(Node *node) { //node is FUNC_DEF
-    char* functionName;
-    int stIndex;
-    functionName = node->child->child->brother->token.value;
-
-    stIndex = lookup(functionName);
-    Symbol* symbol = symbolTable[stIndex];
-    if(symbol->typeQualifier != FUNC_TYPE){
-        //invalid symbol!
-        return;
-    }
-
-    //function header
-    int size; //param's size + local variable size
-    setBlock();
-    /**
-     * size :
-     *  1. FUNC_HEAD의 FORMAL_PARA를 해결 해야 한다.
-     *  2. COMPOUND_ST의 DCL_LIST를 해결 해야 한다.
-     */
-    //get size from FORMAL_PARA
-    Node* formal_para = node->child->child->brother->brother;
-    if(formal_para->token.number != FORMAL_PARA){
-        printf("error(FUNC_DEF) : token number is expected FORMAL_PARA(%d) but %d\n", FORMAL_PARA, node->token.number);
-        return;
-    }
-    //get size from DCL_LIST
-    emit3(proc, size, blockStack[blockTop], lexical_level);
-    //function body 수행
-
-
-
-    stackTop++;
-    paramNum = tblStack[stackTop - 1]->st[stIndex].width;
-    tblStack[stackTop] = tblStack[stackTop - 1]->st[stIndex].link;
-
-    offsetStack[stackTop] = 1;
-
-    for (p = ptr->son->son->brother->brother->son; p; p = p->brother) {
-        if (p->token.tokenNumber == PARAM_DCL) {
-            printf("[[%s]]\n", nodeName[p->son->son->token.tokenNumber]);
-            processFuncDeclaration(p->son);
-        }
-    }
-
-    // 선언부 처리
-    for (p = ptr->son->brother->son->son; p; p = p->brother) {
-        if (p->token.tokenNumber == DCL) {
-            processDeclaration(p->son);
-        } else {
-            icg_error(3);
-        }
-    }
-
-    // 함수 시작 코드 생성
-    emitProc(functionName, offsetStack[stackTop] - 1 + noArgument, tblStack[stackTop]->base, 2);
-    //emitProc(functionName, offsetStack[stackTop]-1, tblStack[stackTop]->base, 2);
-
-
-
-    for (i = 0; i < noArgument; i++) {
-        argNum++;
-        emitSym("sym", tblStack[stackTop]->base,
-                i + 1, 1);
-    }
-
-
-    for (i = 0; i < tblStack[stackTop]->num; i++) {
-        argNum++;
-        emitSym("sym", tblStack[stackTop]->base,
-                tblStack[stackTop]->st[i].offset + noArgument, tblStack[stackTop]->st[i].width);
-    }
-
-    //buildUp = TRUE;
-
-
-
-    for (i = 0; i < tblStack[stackTop]->num; i++) {
-
-        if (tblStack[stackTop]->st[i].needInitialValue) {
-            emit1("ldc", tblStack[stackTop]->st[i].initialValue);
-            emit2("str", tblStack[stackTop]->base, tblStack[stackTop]->st[i].offset);
-        }
-    }
-
-    /*
-    for( i = paramNum; i < tblStack[stackTop]->num;i++)
-    {
-        emit1("ldc", tblStack[stackTop]->st[i].initialValue );
-        emit2("str", tblStack[stackTop]->base, tblStack[stackTop]->st[i].offset);
-    }*/
-
-    // 소스코드내의 문장 처리
-    for (p = ptr->son; p; p = p->brother) {
-        //printf( "############# %d\n", p->token.tokenValue );
-        if (p->token.tokenNumber == COMPOUND_ST) {
-            processStatement(p);
-        }
-    }
-
-
-    if (!flag_returned) {
-        emit0("ret");
-    }
-    emit0("end");
-
-    buildUp = FALSE;
-
-    stackTop--;
-
-
-
-}
-
-
-void emitJump(enum U_CODE code, char* label) {
-    printf("%s\t%s\n", ucodeName[code], label);
-}
-
-void emit0(enum U_CODE code) {
-    printf("%s\n", ucodeName[code]);
-}
-
-void emit1(enum U_CODE code, int param) {
-    printf("%s\t%d\n", ucodeName[code], param);
-}
-void emit2(enum U_CODE code, int param1, int param2) {
-    printf("%s\t%d\t%d\n", ucodeName[code], param1, param2);
-}
-
-void emitLabel(char *label) {
-    printf("%s\t%s\n", ucodeName[nop], label);
-}
-
-void emit3(enum U_CODE code, int param1, int param2, int param3) {
-    printf("%s\t%d\t%d\t%d\n", ucodeName[code], param1, param2, param3);
-}
-void icg_error(int reason) {
-
-}
-
-void processFuncHeader(Node *node) {
-    int noArguments;
-    enum TYPE_SPEC returnType = VOID_TYPE;
-    int stIndex;
-    Node *p;
-    if(node->token.number != FUNC_HEAD){ printf("error in processFuncHeader\n");}
-    //step 1:
-    p = node->child->child;
-    while(p){
-        if(p->token.number == INT_NODE) returnType = INT_TYPE;
-        else if(p->token.number == VOID_NODE) returnType = VOID_TYPE;
-        else printf("invalid function return type\n");
-        p=p->brother;
-    }
-    //step 2: count the number of formal pararmeters
-    p=node->child->brother->brother; //FORMAL_PARA
-    p=p->child;//PARAM_DCL
-    noArguments = 0;
-    while(p){
-        noArguments++;
-        p=p->brother;
-    }
-    //step 3: insert the function name
-    insert(node->child->brother->token.value, returnType, FUNC_TYPE, noArguments, 0);
-}
-
-
-void processDeclaration(Node *node) {
+void processDeclaration(Node *node) {//node = DCL_SPEC
     Node *p, *q;
     enum TYPE_SPEC typeSpecifier;
     enum TYPE_QUALIFIER typeQualifier;
 
-    if(node->token.number != DCL_SPEC) icg_error(4);
+    if(node->token.number != DCL_SPEC) printf("error(Declaration) : node is not DCL_SPEC\n");
     //step 1: process DCL_SPEC
     typeSpecifier = INT_TYPE;
     typeQualifier = VAR_TYPE;
@@ -280,7 +110,7 @@ void processDeclaration(Node *node) {
 
     //step 2: process DCL_ITEM
     p = node->brother;
-    if(p->token.number != DCL_ITEM) icg_error(5);
+    if(p->token.number != DCL_ITEM) printf("error(Declaration) : node is not DCL_SPEC\n");
     while(p){
         q = p->child;
         switch(q->token.number){
@@ -296,22 +126,6 @@ void processDeclaration(Node *node) {
         }
         p = p->brother;
     }
-}
-
-void processArrayVariable(Node *node, enum TYPE_SPEC typeSpecifier, enum TYPE_QUALIFIER typeQualifier) {
-    Node *p = node->child;
-    int size = 0;
-    if(node->token.number != ARRAY_VAR) {
-        printf("error(ARRAY_VAR) : token number is expected ARRAY_VAR(%d) but %d", ARRAY_VAR, node->token.number);
-        return;
-    }
-    if(p->brother == NULL)
-        printf("error(ARRAY_VAR) : array size must be specified\n");
-    else size = atoi(p->brother->token.value);
-
-    size *= typeSize(typeSpecifier);
-    insert(p->token.value, typeSpecifier, typeQualifier, size, 0);
-
 }
 
 void processSimpleVariable(Node *node, enum TYPE_SPEC typeSpecifier, enum TYPE_QUALIFIER typeQualifier) {
@@ -337,15 +151,231 @@ void processSimpleVariable(Node *node, enum TYPE_SPEC typeSpecifier, enum TYPE_Q
         insert(p->token.value, typeSpecifier, typeQualifier, size, 0);
     }
 }
+void processArrayVariable(Node *node, enum TYPE_SPEC typeSpecifier, enum TYPE_QUALIFIER typeQualifier) {
+    Node *p = node->child;
+    int size = 0;
+    if(node->token.number != ARRAY_VAR) {
+        printf("error(ARRAY_VAR) : token number is expected ARRAY_VAR(%d) but %d", ARRAY_VAR, node->token.number);
+        return;
+    }
+    if(p->brother == NULL)
+        printf("error(ARRAY_VAR) : array size must be specified\n");
+    else size = atoi(p->brother->token.value);
 
+    size *= typeSize(typeSpecifier);
+    insert(p->token.value, typeSpecifier, typeQualifier, size, 0);
 
+}
+void processFuncHeader(Node *node) {
+    int noArguments;
+    enum TYPE_SPEC returnType = VOID_TYPE;
+    Node *p;
+    if(node->token.number != FUNC_HEAD){ printf("error in processFuncHeader\n");}
+    //step 1:
+    p = node->child->child;
+    while(p){
+        if(p->token.number == INT_NODE) returnType = INT_TYPE;
+        else if(p->token.number == VOID_NODE) returnType = VOID_TYPE;
+        else printf("invalid function return type\n");
+        p=p->brother;
+    }
+    //step 2: count the number of formal pararmeters
+    p=node->child->brother->brother; //FORMAL_PARA
+    p=p->child;//PARAM_DCL
+    noArguments = 0;
+    while(p){
+        noArguments++;
+        p=p->brother;
+    }
+    //step 3: insert the function name
+    insert(node->child->brother->token.value, returnType, FUNC_TYPE, noArguments, 0);
+}
+void processFunction(Node *node) { //node is FUNC_DEF
+    char* functionName;
+    char buf[40] = {0, };
+    functionName = node->child->child->brother->token.value;
+
+    Symbol* symbol = lookup(functionName);
+    if(symbol == NULL){
+        //not defined function
+        return;
+    }
+    if(symbol->typeQualifier != FUNC_TYPE){
+        //invalid symbol!
+        return;
+    }
+    //insert symbol from FORMAL_PARA and DCL_LIST
+    setBlock();
+    Node *formal_para = node->child->child->brother->brother;
+    if(formal_para->token.number != FORMAL_PARA){
+        return;
+    }
+    Node *p = formal_para->child; //PARAM_DCL
+    while(p){
+        processPARAM_DCL(p->child);
+        p=p->brother;
+    }
+    //process DCL_LIST
+    Node *dcl_list = node->child->brother->child;
+    if(dcl_list->token.number != DCL_LIST){
+        return;
+    }
+    p = dcl_list->child;
+    while(p){
+        processDeclaration(p->child);
+        p=p->brother;
+    }
+
+    //print symbolTable
+    sprintf(buf, "setblock func(%s)", functionName);
+    printSymbolTable(buf);
+
+    //emit proc
+    Block *block = getBlock();
+    emitProc(functionName, block->number, block->offset-1, LEXICAL_LEVEL);
+    emitSymbols();
+    //process stat_list
+    p = dcl_list->brother->child; //stat_list->child
+    int flag = 0;
+    while(p){
+        processStatement(p);
+        if(p->brother == NULL && p->token.number == RETURN_ST){
+            flag = 1;
+        }
+        p=p->brother;
+    }
+    //return value 마지막 줄에 return은 생략되어 있을 수 있다.
+    if(!flag){
+        emit0(ret);
+    }
+    emit0(endop);
+    unsetBlock();
+    memset(buf, 0, 40);
+    sprintf(buf, "unsetblock func(%s)", functionName);
+    printSymbolTable(buf);
+}
+
+void processPARAM_DCL(Node *node) { //node == DCL_SPEC
+    Node *p;
+    enum TYPE_SPEC typeSpecifier;
+    enum TYPE_QUALIFIER typeQualifier;
+
+    if(node->token.number != DCL_SPEC) printf("error(PARAM_DCL) : node is not DCL_SPEC\n");
+    //step 1: process DCL_SPEC
+    typeSpecifier = INT_TYPE;
+    typeQualifier = VAR_TYPE;
+    p = node->child;
+    while(p){ //dcl_spec의 자식들을 탐색
+        if(p->token.number == INT_NODE) typeSpecifier = INT_TYPE;
+        else if(p->token.number == CONST_NODE) typeQualifier = CONST_TYPE;
+        else {
+            printf("not yet implemented\n");
+            return;
+        }
+        p = p->brother;
+    }
+
+    //step 2: process SIMPLE_VAR or ARRAY_VAR
+    p = node->brother;
+
+    switch(p->token.number){
+        case SIMPLE_VAR:
+            processSimpleVariable(p, typeSpecifier, typeQualifier);
+            break;
+        case ARRAY_VAR:
+            processRepVariable(p, REP_TYPE, typeQualifier);
+            break;
+        default:
+            printf("error(DCL) : invalid variable type\n");
+            break;
+    }
+}
+void processStatement(Node *node){
+    switch(node->token.number){
+        case COMPOUND_ST:
+        {
+            Node *p = node->child->brother;
+            p = p->child;
+            while(p){
+                processStatement(p);
+                p=p->brother;
+            }
+            break;
+        }
+        case EXP_ST:
+            if(node->child != NULL)processOperator(node->child);
+            break;
+        case RETURN_ST:
+        {
+            Node *p;
+            if(node->child != NULL){
+                p = node->child;
+                if(p->noderep == nonterm) processOperator(p);
+                else rv_emit(p);
+                emit0(retv);
+            }else emit0(ret);
+            break;
+        }
+        case IF_ST: {
+            char label[LABEL_SIZE];
+            genLabel(label);
+            processCondition(node->child);
+            emitJump(fjp, label);
+            processStatement(node->child->brother);
+            emitLabel(label);
+            break;
+        }
+        case IF_ELSE_ST: {
+            char label1[LABEL_SIZE], label2[LABEL_SIZE];
+            genLabel(label1);
+            genLabel(label2);
+            processCondition(node->child); //condition
+            emitJump(fjp, label1);
+            processStatement(node->child->brother); //true
+            emitJump(ujp, label2);
+            emitLabel(label1);
+            processStatement(node->child->brother->brother); //false
+            emitLabel(label2);
+            break;
+        }
+        case WHILE_ST:{
+            char label1[LABEL_SIZE], label2[LABEL_SIZE];
+            genLabel(label1);
+            genLabel(label2);
+            emitLabel(label1);
+            processCondition(node->child); //condition
+            emitJump(fjp, label2);
+            processStatement(node->child->brother); //loop body
+            emitJump(ujp, label1);
+            emitLabel(label2);
+            break;
+        }
+        default:
+            printf("not yet implemented.\n");
+            break;
+    }
+}
+
+void processCondition(Node *node) {
+    if(node->noderep == nonterm) processOperator(node);
+    else rv_emit(node);
+}
+
+void processRepVariable(Node *node, enum TYPE_SPEC spec, enum TYPE_QUALIFIER qualifier) {
+    Node *p = node->child;
+    if(node->token.number != ARRAY_VAR) {
+        printf("error(RepVariable) : token number is expected ARRAY_VAR(%d) but %d", ARRAY_VAR, node->token.number);
+        return;
+    }
+    insert(p->token.value, spec, qualifier, typeSize(spec), 0);
+
+}
 
 void processOperator(Node *node){
-    int lvalue = 0;
+    static int lvalue = 0;
     switch(node->token.number){
         case ASSIGN_OP:
         {
-            int stIndex = -1;
             Node *lhs = node->child, *rhs = node->child->brother;
             //step 1: gen left-hand side first
             if(lhs->noderep == nonterm){ //lhs is array
@@ -358,19 +388,18 @@ void processOperator(Node *node){
             else{ rv_emit(rhs); }
             //step 3: gen a store instruction
             if(lhs->noderep == terminal){ //simple variable
-                stIndex = lookup(lhs->token.value);
-                if(stIndex == -1){
+                Symbol *symbol = lookup(lhs->token.value);
+                if(symbol == NULL){
                     printf("error(OPERATOR) : undefined variable : %s\n", lhs->token.value);
                     return;
                 }
-                emit2(str, symbolTable[stIndex]->block, symbolTable[stIndex]->offset);
+                emit2(str, symbol->block, symbol->offset);
             } else
                 emit0(sti);
             break;
         }
         case ADD_ASSIGN: case SUB_ASSIGN: case MUL_ASSIGN: case DIV_ASSIGN: case MOD_ASSIGN:
         {
-            int stIndex = -1;
             Node *lhs = node->child, *rhs=node->child->brother;
             int nodeNumber = node->token.number;
             node->token.number = ASSIGN_OP;
@@ -400,12 +429,12 @@ void processOperator(Node *node){
             }
             //step 5: code gen for store code
             if(lhs->noderep == terminal){
-                stIndex = lookup(lhs->token.value);
-                if(stIndex == -1){
+                Symbol *symbol = lookup(lhs->token.value);
+                if(symbol == NULL){
                     printf("undefined variable : %s\n", lhs->child->token.value);
                     return;
                 }
-                emit2(str, symbolTable[stIndex]->block, symbolTable[stIndex]->offset);
+                emit2(str, symbol->block, symbol->offset);
             }else
                 emit0(sti);
             break;
@@ -455,18 +484,18 @@ void processOperator(Node *node){
         {
             Node *p = node->child;
             Node *q;
-            int stIndex;
-            int amount = 1;
+            Symbol *s;
             if(p->noderep == nonterm) processOperator(p);
             else rv_emit(p);
             q=p;
+
             while(q->noderep != terminal) q = q->child;
             if(!q || (q->token.number != IDENT)){
                 printf("increment/decrement operators can not be applied in expression\n");
                 return;
             }
-            stIndex = lookup(q->token.value);
-            if(stIndex == -1) return;
+            s = lookup(q->token.value);
+            if(s == NULL) return;
             switch(node->token.number){
                 case PRE_INC: emit0(incop); break;
                 case PRE_DEC: emit0(decop); break;
@@ -475,9 +504,9 @@ void processOperator(Node *node){
                 default: break;
             }
             if(p->noderep == terminal){
-                stIndex = lookup(p->token.value);
-                if(stIndex == -1) return;;
-                emit2(str, symbolTable[stIndex]->block, symbolTable[stIndex]->offset);
+                s = lookup(p->token.value);
+                if(s == NULL) return;
+                emit2(str, s->block, s->offset);
             }else if(node->token.number == INDEX){
                 lvalue = 1;
                 processOperator(p);
@@ -490,16 +519,20 @@ void processOperator(Node *node){
         }
         case INDEX:
         {
-            int stIndex = -1;
             Node *indexExp = node->child->brother;
+            Symbol *s;
             if(indexExp->noderep == nonterm) processOperator(indexExp);
             else rv_emit(indexExp);
-            stIndex = lookup(node->child->token.value);
-            if(stIndex == -1){
+            s = lookup(node->child->token.value);
+            if(s == NULL){
                 printf("undefined variable : %s\n", node->child->token.value);
                 return;
             }
-            emit2(lda, symbolTable[stIndex]->block, symbolTable[stIndex]->offset);
+            if(s->typeSpecifier == REP_TYPE){
+                emit2(lod, s->block, s->offset);
+            }else if(s->typeSpecifier == INT_TYPE) {
+                emit2(lda, s->block, s->offset);
+            }
             emit0(add);
             if(!lvalue) emit0(ldi);
             break;
@@ -508,22 +541,23 @@ void processOperator(Node *node){
         {
             Node *p = node->child; //function name
             char *functionName;
-            int stIndex, noArguments;
-            //if(checkPredefined(p)) break;
+            int noArguments;
+            Symbol *s;
+            if(checkPredefined(p)) break;
             //handle for user function
             functionName = p->token.value;
-            stIndex = lookup(functionName);
-            if(stIndex == -1) break; //undefined function
-            noArguments = symbolTable[stIndex]->size;
+            s = lookup(functionName);
+            if(s == NULL) break; //undefined function
+            noArguments = s->size;
             emit0(ldp);
-            p=p->brother; //ACTUAL_PARAM
+            p=p->brother->child; //ACTUAL_PARAM's child
             while(p){
                 if(p->noderep == nonterm) processOperator(p);
                 else rv_emit(p);
                 noArguments--;
                 p=p->brother;
             }
-            if(!noArguments){
+            if(noArguments){
                 printf("%s : invalid actual arguments", functionName);
             }
             emitJump(call, node->child->token.value);
@@ -534,102 +568,80 @@ void processOperator(Node *node){
             break;
     }
 }
-
-
+void genLabel(char *label) {
+    static int lc = 0;
+    memset(label, 0, sizeof(char)*LABEL_SIZE);
+    sprintf(label, "$$%d", lc);
+    lc++;
+}
 void rv_emit(Node *node) {
-    int stIndex;
     if(node->token.number == NUMBER)
         emit1(ldc, atoi(node->token.value));
     else{
-        stIndex = lookup(node->token.value);
-        if(stIndex == -1) return;
-        if(symbolTable[stIndex]->typeQualifier == CONST_TYPE)
-            emit1(ldc, symbolTable[stIndex]->initValue);
-        else if(symbolTable[stIndex]->size> 1)
-            emit2(lda, symbolTable[stIndex]->block, symbolTable[stIndex]->offset);
+        Symbol *s = lookup(node->token.value);
+        if(s == NULL) return;
+        if(s->typeQualifier == CONST_TYPE)
+            emit1(ldc, s->initValue);
+        else if(s->size> 1)
+            emit2(lda, s->block, s->offset);
         else
-            emit2(lod, symbolTable[stIndex]->block, symbolTable[stIndex]->offset);
+            emit2(lod, s->block, s->offset);
+    }
+}
+int checkPredefined(Node *node) {
+    char *function_name = node->token.value;
+    Node* param = node->brother->child;
+    if(!strcmp(function_name, "write")){
+        if(param == NULL || param->noderep != terminal || param->brother != NULL){
+            printf("error(write) : invalid param!\n");
+            return 1;
+        }
+        Symbol *s = lookup(param->token.value);
+        if(s == NULL){
+            printf("error(write) : undefined symbol! %s\n", param->token.value);
+            return 1;
+        }
+        emit0(ldp);
+        emit2(lod, s->block, s->offset);
+        emitJump(call, function_name);
+        return 1;
+    }
+    if(!strcmp(function_name, "read")){
+        if(param == NULL || param->noderep != terminal || param->brother != NULL){
+            printf("error(write) : invalid param!\n");
+            return 1;
+        }
+        Symbol *s = lookup(param->token.value);
+        if(s == NULL){
+            printf("error(read) : undefined symbol! %s\n", param->token.value);
+            return 1;
+        }
+        emit0(ldp);
+        emit2(lda, s->block, s->offset);
+        emitJump(call, function_name);
+        return 1;
+    }
+    if(!strcmp(function_name, "lf")){
+        if(param != NULL){
+            printf("error(lf) : invalid param!\n");
+            return 1;
+        }
+        emitJump(call, function_name);
+        return 1;
+    }
+    return 0;
+}
+void emitSymbols() {
+    int size = getSymbolCount();
+    for(int i=0; i<size; i++){
+        struct symbolType *s = getSymbol(i);
+        if(s->typeQualifier == VAR_TYPE) {
+            emitSymbol(sym, s->block, s->offset, s->size, s->name);
+        }
     }
 }
 
-void processStatement(Node *node){
-    int returnWithValue = 0;
-    switch(node->token.number){
-        case COMPOUND_ST:
-        {
-            Node *p = node->child->brother;
-            p = p->child;
-            while(p){
-                processStatement(p);
-                p=p->brother;
-            }
-            break;
-        }
-        case EXP_ST:
-            if(node->child != NULL)processOperator(node->child);
-            break;
-        case RETURN_ST:
-        {
-            Node *p;
-            if(node->child != NULL){
-                returnWithValue = 1;
-                p = node->child;
-                if(p->noderep == nonterm) processOperator(p);
-                else rv_emit(p);
-                emit0(retv);
-            }else emit0(ret);
-            break;
-        }
-        case IF_ST: {
-            char label[LABEL_SIZE];
-            genLabel(label);
-            processCondition(node->child);
-            emitJump(fjp, label);
-            processStatement(node->child->brother);
-            emitLabel(label);
-            break;
-        }
-        case IF_ELSE_ST: {
-            char label1[LABEL_SIZE], label2[LABEL_SIZE];
-            genLabel(label1);
-            genLabel(label2);
-            processCondition(node->child); //condition
-            emitJump(fjp, label1);
-            processStatement(node->child->brother); //true
-            emitJump(ujp, label2);
-            emitLabel(label1);
-            processStatement(node->child->brother->brother); //false
-            emitLabel(label2);
-            break;
-        }
-        case WHILE_ST:{
-            char label1[LABEL_SIZE], label2[LABEL_SIZE];
-            genLabel(label1);
-            genLabel(label2);
-            emitLabel(label1);
-            processCondition(node->child); //condition
-            emitJump(fjp, label2);
-            processStatement(node->child->brother); //loop body
-            emitJump(ujp, label1);
-            emitLabel(label2);
-            break;
-        }
-        default:
-            printf("not yet implemented.\n");
-            break;
-    }
-}
-
-
-
-void genLabel(char *label) {
-
-}
-
-void processCondition(Node *node) {
-    if(node->noderep == nonterm) processOperator(node);
-    else rv_emit(node);
-}
+/***Import Tree***/
 
 Node* importTree(char* filename){
     FILE* fp = NULL;
@@ -637,7 +649,7 @@ Node* importTree(char* filename){
     int flag[AST_STACK_SIZE] = {0, };
     Node* root;
     int top = 0;
-    fp = fopen(filename == NULL ? DEFAULT_READ_FILE : filename, "r");
+    fp = fopen(filename, "r");
     if(fp == NULL){
         printf("invalid file to open\n");
         exit(1);
@@ -711,25 +723,17 @@ Node *readNode(FILE *fp) {
     return node;
 }
 
-/*print AST function*/
-void printNode(Node* node, int indent){
-    int i;
-    for(i=1; i<=indent; i++){
-        printf(" ");
-    }
-    if(node->noderep == terminal){
-        printf(" Terminal: %s", node->token.value);
-    }else{
-        printf(" Nonterminal: %d", node->token.number);
-    }
-    printf("\n");
-}
-
-void printTree(Node* node, int indent){
-    Node* p = node;
-    while(p!=NULL){
-        printNode(p, indent);
-        if(p->noderep == nonterm) printTree(p->child, indent+5);
-        p = p->brother;
+void strsep(char* str, char sep, int count){
+    int len = strlen(str);
+    int cnt = 0;
+    for(int i=len-1; i>=0; i--){
+        if(*(str+i) == sep){
+            //i is sep
+            memset((str+i), 0, sizeof(char)*len-i);
+            cnt++;
+            if(cnt == count) {
+                break;
+            }
+        }
     }
 }

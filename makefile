@@ -1,8 +1,14 @@
-minic : parser.tab.o lex.yy.o ast.builder.o
-	gcc -lm -o $@ parser.tab.c lex.yy.c parser.tab.h Node.h -lfl -L C:\MingW\msys\1.0\lib
+ast_gen : parser.tab.o lex.yy.o
+	gcc -lm -o $@ parser.tab.o lex.yy.o -lfl -L C:\MingW\msys\1.0\lib
 
-parser.tab.c : parser.y 
-	bison $<
+parser.tab.o : parser.tab.c Node.h
+	gcc -c $<
 
-lex.yy.c : scanner.l 
+parser.tab.c : parser.y
+	bison $< --defines
+
+lex.yy.o : lex.yy.c parser.tab.h Node.h
+	gcc -c $<
+
+lex.yy.c : scanner.l
 	flex $<

@@ -17,7 +17,7 @@ enum nodeNumber{
 	SUB_ASSIGN, 	UNARY_MINUS, 	VOID_NODE, 	WHILE_ST };
 
 enum nodeRep{terminal, nonterm};
-typedef struct TokenType{
+typedef struct tokenType{
 	int number;
 	char* value;
 } Token;
