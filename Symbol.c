@@ -122,7 +122,7 @@ void unsetBlock(){ //pop
 
     //remove sybols
     Block *block = topBlock();
-    for(int i=block->stIndex; i<symbolTop && symbolTable[i]; i++) {
+    for(int i=symbolTop-1; i>=block->stIndex; i--) {
         //remove symbol
         Symbol* symbol = symbolTable[i];
         if(symbol->nextIndex != -1){
